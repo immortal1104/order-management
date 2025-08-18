@@ -1,44 +1,53 @@
-"""
-app.py
-Smart Order Tracker - Flask Application
-
-Version: 4.3
-Highlights in v4.3:
-- EMI reminders use Indian public holidays from Calendarific API and exclude weekends.
-- If today is a holiday, reminders are deferred by +1 working day.
-- All previous app features and routes retained; see "INDEX" for updated holiday logic.
-"""
-
 import os
 import re
 import json
-import subprocess
 from collections import defaultdict
 from datetime import datetime, date, timedelta
 import requests
-
 from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify
 from werkzeug.utils import secure_filename
+
+from pydrive2.auth import GoogleAuth
+from pydrive2.drive import GoogleDrive
 
 # ---------------- APP CONFIG ----------------
 
 app = Flask(__name__)
 app.secret_key = 'super-secret-key'
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(minutes=15)
-
 UPLOAD_FOLDER = 'uploads'
 ORDERS_FILE = 'orders.json'
 CARDS_FILE = 'cards.json'
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-
-# In-memory orders list
 orders = []
-
-# Simple user store
 USER_CREDENTIALS = {
     "7206491113.os@gmail.com": "bittu@123"
 }
+
+# ------------------- GOOGLE DRIVE SETUP -------------------
+gauth = GoogleAuth()
+# Use credentials or config localwebserver if no credentials present
+if os.path.exists('mycreds.txt'):
+    gauth.LoadCredentialsFile('mycreds.txt')
+if not gauth.credentials or gauth.access_token_expired:
+    try:
+        gauth.CommandLineAuth()
+    except:
+        gauth.LocalWebserverAuth()
+    gauth.SaveCredentialsFile('mycreds.txt')
+else:
+    gauth.Authorize()
+drive = GoogleDrive(gauth)
+
+def upload_file_pydrive(local_path, remote_folder_id=None):
+    file_drive = drive.CreateFile({'title': os.path.basename(local_path)})
+    if remote_folder_id:
+        file_drive['parents'] = [{'id': remote_folder_id}]
+    file_drive.SetContentFile(local_path)
+    file_drive.Upload()
+    file_drive.InsertPermission({'type': 'anyone', 'value': 'anyone', 'role': 'reader'})
+    return f"https://drive.google.com/uc?id={file_drive['id']}"
 
 # ------------------- UTILS -------------------
 
@@ -110,36 +119,26 @@ def generate_drive_open_link(file_id):
 # ------------- EMI/Working Day/Holiday LOGIC -------------
 
 def fetch_calendarific_holidays(year=None):
-    """
-    Fetch Indian public holidays from Calendarific API for the given year.
-    Replace YOUR_KEY with your actual API key.
-    """
     if year is None:
         year = date.today().year
-    api_key = "9sI48BBdHs2tT9IsXdgs4dSqBLXeUFCp"  # <-- INSERT YOUR Calendarific Key here!
+    api_key = "9sI48BBdHs2tT9IsXdgs4dSqBLXeUFCp"
     url = f"https://calendarific.com/api/v2/holidays?api_key={api_key}&country=IN&year={year}"
     try:
         resp = requests.get(url)
         if resp.ok:
             data = resp.json()
             holidays = data['response']['holidays']
-            # Keep only public (national/bank) holidays
             return set([h['date']['iso'] for h in holidays if h.get('type', [''])[0].lower() == 'national'])
         else:
             print("Calendarific API error:", resp.text)
     except Exception as e:
         print("Calendarific error:", e)
-    # If API fails, fall back to a static minimal set
     return {f"{year}-01-26", f"{year}-08-15", f"{year}-10-02"}
 
 def count_working_days(start, end, holidays_set):
-    """Count working days (Mon-Fri, excludes holidays)."""
     count = 0
     current = start
     while current <= end:
-        if current.weekday() < 5 and current.strftime('%Y-%m-%d') in holidays_set:
-            current += timedelta(days=1)
-            continue
         if current.weekday() < 5 and current.strftime('%Y-%m-%d') not in holidays_set:
             count += 1
         current += timedelta(days=1)
@@ -164,20 +163,14 @@ def save_files(files, fy, date_obj, order_no, platform, pay_mode, folder):
         filename = secure_filename(f"{filestamp}{ext}")
         local_path = os.path.join(folder_path, filename)
         file.save(local_path)
-        remote_parent = f"gdrive:OrderUploads/{fy}/{folder}"
-        remote_file_path = f"{remote_parent}/{filename}"
         try:
-            subprocess.run(['rclone', 'copy', local_path, remote_parent], check=True)
-            result = subprocess.run(['rclone', 'link', remote_file_path],
-                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-            output = result.stdout.strip()
-            match = re.search(r'/d/([a-zA-Z0-9_-]+)', output)
-            file_id = match.group(1) if match else None
-            public_link = generate_drive_open_link(file_id) if file_id else output
-            saved.append({'link': public_link, 'path': remote_file_path})
+            # Optionally set remote_folder_id to your Google Drive folder ID (or None for root)
+            public_link = upload_file_pydrive(local_path, remote_folder_id=None)
+            saved.append({'link': public_link, 'path': f'drive:{filename}'})
             os.remove(local_path)
         except Exception as e:
             flash(f"Upload failed for {filename}: {str(e)}", "danger")
+            saved.append({'link': f'/uploads/{fy}/{folder}/{filename}', 'path': local_path})
             continue
     return saved
 
@@ -219,13 +212,10 @@ def index():
     if 'user' not in session:
         return redirect(url_for('login'))
     load_orders()
-
-    # --- EMI REMINDER: Using working days and API holidays ---
     today = date.today()
     holidays_set = fetch_calendarific_holidays(today.year)
     is_today_holiday = today.strftime('%Y-%m-%d') in holidays_set
     reminder_ref_date = today + timedelta(days=1) if is_today_holiday else today
-
     for o in orders:
         try:
             order_dt = datetime.strptime(o.get('order_date', ''), '%Y-%m-%d').date()
@@ -277,13 +267,11 @@ def pl_metrics_dashboard():
     selected_month = request.args.get('month', current_month)
     if selected_month not in months and months:
         selected_month = months[-1]
-
     earning = sum(o.get('profit_loss', 0) for o in orders
                   if o.get('profit_loss', 0) > 0 and o.get('order_date', '').startswith(selected_month))
     total_spent = sum(o.get('spent', 0) for o in orders if o.get('order_date', '').startswith(selected_month))
     total_received = sum(o.get('cash_received', 0) for o in orders if o.get('order_date', '').startswith(selected_month))
     cash_pending = sum(float(o.get('sell', 0) or 0) for o in orders if float(o.get('cash_received', 0) or 0) == 0)
-
     stock_orders = [o for o in orders if int(o.get('delivery_status', 0)) == 1 and float(o.get('sell', 0) or 0) == 0]
     total_stock_available = len(stock_orders)
     stock_table = stock_orders
@@ -334,15 +322,15 @@ def pl_metrics_dashboard():
         for o in orders if float(o.get('cash_received', 0) or 0) == 0 and float(o.get('sell', 0) or 0) > 0
     ]
     return render_template('pl_metrics_dashboard.html',
-                         dashboard=dashboard,
-                         months=months,
-                         selected_month=selected_month,
-                         monthly_data=monthly_data,
-                         yearly_data=yearly_data,
-                         latest_year=latest_year,
-                         stock_table=stock_table,
-                         cash_pending_orders=cash_pending_orders,
-                         yet_to_deliver_orders=yet_to_deliver_orders)
+                           dashboard=dashboard,
+                           months=months,
+                           selected_month=selected_month,
+                           monthly_data=monthly_data,
+                           yearly_data=yearly_data,
+                           latest_year=latest_year,
+                           stock_table=stock_table,
+                           cash_pending_orders=cash_pending_orders,
+                           yet_to_deliver_orders=yet_to_deliver_orders)
 
 # ------------------- ADD ORDER -------------------
 
@@ -363,9 +351,9 @@ def add():
         date_obj = datetime.today()
     fy = get_financial_year(form.get('order_date') or date_obj.strftime('%Y-%m-%d'))
     screenshots = save_files(request.files.getlist('screenshots'), fy, date_obj, order_no,
-                           form.get('platform'), form.get('payment_mode'), 'screenshots')
+                             form.get('platform'), form.get('payment_mode'), 'screenshots')
     pdfs = save_files(request.files.getlist('pdfs'), fy, date_obj, order_no,
-                     form.get('platform'), form.get('payment_mode'), 'pdfs')
+                      form.get('platform'), form.get('payment_mode'), 'pdfs')
     orders.append({
         'platform': form.get('platform'),
         'order_number': order_no,
@@ -391,7 +379,7 @@ def add():
 
 # ------------------- EDIT ORDER -------------------
 
-@app.route('/edit/<order_number>', methods=['POST'])
+@app.route('/edit/', methods=['POST'])
 def edit(order_number):
     if 'user' not in session:
         return redirect(url_for('login'))
@@ -412,9 +400,9 @@ def edit(order_number):
         date_obj = datetime.today()
     fy = get_financial_year(form.get('order_date') or date_obj.strftime('%Y-%m-%d'))
     screenshots = save_files(request.files.getlist('screenshots'), fy, date_obj, updated_number,
-                           form.get('platform'), form.get('payment_mode'), 'screenshots')
+                             form.get('platform'), form.get('payment_mode'), 'screenshots')
     pdfs = save_files(request.files.getlist('pdfs'), fy, date_obj, updated_number,
-                     form.get('platform'), form.get('payment_mode'), 'pdfs')
+                      form.get('platform'), form.get('payment_mode'), 'pdfs')
     order.update({
         'platform': form.get('platform'),
         'order_number': updated_number,
@@ -440,7 +428,7 @@ def edit(order_number):
 
 # ------------------- DELETE FILE -------------------
 
-@app.route('/delete-file/<order_number>', methods=['POST'])
+@app.route('/delete-file/', methods=['POST'])
 def delete_file(order_number):
     if 'user' not in session:
         return redirect(url_for('login'))
@@ -450,20 +438,14 @@ def delete_file(order_number):
         if o['order_number'] == order_number:
             for key in ['screenshots', 'pdfs']:
                 o[key] = [f for f in o.get(key, [])
-                         if (f != filepath and f.get('path') != filepath if isinstance(f, dict) else True)]
-            try:
-                if filepath.startswith("gdrive:"):
-                    subprocess.run(['rclone', 'delete', filepath], check=True)
-                flash("✅ File deleted from Google Drive", "info")
-            except Exception as e:
-                flash(f"⚠️ Failed to delete from Drive: {str(e)}", "warning")
+                          if (f != filepath and f.get('path') != filepath if isinstance(f, dict) else True)]
             break
     save_orders()
     return redirect(url_for('index'))
 
 # ------------------- DELETE ORDER -------------------
 
-@app.route('/delete/<order_number>', methods=['POST'])
+@app.route('/delete/', methods=['POST'])
 def delete_order(order_number):
     if 'user' not in session:
         return redirect(url_for('login'))
