@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Profit & Loss Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+  <style>
+    body, .container, h2, h3, h4, .card, label, select, option, .btn, .form-label, .form-select {
+      font-size: 12px !important;
+    }
+    canvas { font-size: 10px !important; }
+    .card h5, .card h3 { font-size: 1em !important; }
+    .table th, .table td { font-size: 11px; vertical-align: middle; }
+    .btn-outline-info, .btn-outline-success, .btn-outline-danger, .btn-outline-warning, .btn-outline-primary {
+      border: none !important;
+    }
+/* Shared action button container */
+.action-buttons {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px; /* equal horizontal gap between items */
+}
+
+/* Uniform look for all buttons and icon styles */
+.action-buttons .btn {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px; /* soft rounded corners */
+  font-size: 16px;
+  line-height: 1;
+  transition: all 0.2s ease-in-out;
+}
+
+/* Beautiful hover effect */
+.action-buttons .btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 3px 8px rgba(0,0,0,0.15);
+}
+
+/* Checkbox uniform style */
+.action-buttons .form-check-input {
+  width: 20px;
+  height: 20px;
+  cursor: pointer;
+  margin: 0;
+  accent-color: #0d6efd; /* Bootstrap primary blue */
+  transition: transform 0.2s;
+}
+
+.action-buttons .form-check-input:hover {
+  transform: scale(1.1);
+}
+
+
+  </style>
+</head>
+<body>
+<div class="container py-3">
+
+  <a href="{{ url_for('index') }}" class="btn btn-secondary btn-sm mb-3">← Back to Dashboard</a>
+  <h2 class="mb-3 text-center">📊 Graph</h2>
+
+  <!-- Metric Cards -->
+  <div class="row mb-3">
+    {% for key, color in {
+      'Earning': 'primary', 'Total Stock Available': 'success', 'Total Spent':'primary',
+      'Total Received':'primary', 'Cash Pending':'danger', 'Yet to Deliver':'warning'
+    }.items() %}
+    <div class="col-6 col-md-2 mb-2 text-center">
+      <div class="card shadow-sm p-2">
+        <h5>{{ key }}</h5>
+        <h3 class="fw-bold text-{{ color }}">
+          {% if '₹' in key or 'Earning' in key or 'Spent' in key or 'Received' in key or 'Cash' in key %}
+            ₹{{ '%.2f'|format(dashboard[key]) }}
+          {% else %}
+            {{ dashboard[key] }}
+          {% endif %}
+        </h3>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <!-- Month Filter -->
+  <form method="get" class="mb-3 d-flex gap-2 align-items-center justify-content-center">
+    <label for="monthSelect" class="form-label mb-0 fw-semibold">Select Month:</label>
+    <select id="monthSelect" name="month" onchange="this.form.submit()" class="form-select w-auto form-select-sm">
+      {% for m in months %}
+      <option value="{{ m }}" {% if m == selected_month %}selected{% endif %}>{{ m|month_label }}</option>
+      {% endfor %}
+    </select>
+  </form>
+
+  <!-- Monthly Chart -->
+  <div class="chart-container mb-4">
+    <h6 class="text-center text-muted mb-2">📅 Monthly Spend - {{ selected_month|month_label }}</h6>
+    <canvas id="monthlyChart"></canvas>
+  </div>
+
+  <!-- Yearly Chart -->
+  <div class="chart-container mb-4">
+    <h6 class="text-center text-muted mb-2">📆 Yearly Spend - {{ latest_year }}</h6>
+    <canvas id="yearlyChart"></canvas>
+  </div>
+
+  <!-- Cash Pending -->
+  <div class="card shadow-sm p-3 mt-4">
+    <h5 class="mb-3 text-center">Cash Pending</h5>
+    <div class="table-responsive">
+      <table class="table table-bordered table-striped text-center mb-0">
+        <thead>
+          <tr>
+            <th>Order Number</th>
+            <th>Model Number</th>
+            <th>To Supply</th>
+            <th>Cash Pending</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if cash_pending_orders %}
+            {% for entry in cash_pending_orders %}
+            <tr>
+              <td>{{ entry.order_number }}</td>
+              <td>{{ entry.model_number }}</td>
+              <td>{{ entry.to_supply }}</td>
+              <td>
+                ₹{{ '%.2f'|format(entry.cash_pending) }}
+                <input type="checkbox" class="form-check-input ms-2 mark-cash" data-order="{{ entry.order_number }}" />
+              </td>
+            </tr>
+            {% endfor %}
+          {% else %}
+          <tr><td colspan="4">No cash pending orders found.</td></tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Stock Available -->
+  <div class="card shadow-sm p-3 mt-3">
+    <h5 class="mb-3 text-center">Stock Available</h5>
+    <div class="table-responsive">
+      <table class="table table-bordered table-striped text-center mb-0">
+        <thead>
+          <tr>
+            <th>Order Number</th>
+            <th>Model Number</th>
+            <th>Stock</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if stock_table %}
+            {% for order in stock_table %}
+            <tr>
+              <td>{{ order.order_number }}</td>
+              <td>{{ order.model_number }}</td>
+              <td>{{ order.stock }}</td>
+              <td>
+  <div class="action-buttons">
+    <button class="btn btn-outline-info" title="View" onclick="viewOrder('{{ order.order_number }}')">
+      🔍
+    </button>
+    <button class="btn btn-outline-primary" title="Edit" onclick='editOrder({{ order | tojson | safe }})'>
+      ✏️
+    </button>
+    <input type="checkbox" class="form-check-input delivery-status-toggle"
+           data-order="{{ order.order_number }}"
+           {% if order.delivery_status == 1 %}checked{% endif %}>
+  </div>
+</td>
+
+
+            </tr>
+            {% endfor %}
+          {% else %}
+          <tr><td colspan="4">No stock entries found.</td></tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Yet to Deliver -->
+  <div class="card shadow-sm p-3 mt-4">
+    <h5 class="mb-3 text-center">Yet to Deliver</h5>
+    <div class="table-responsive">
+      <table class="table table-bordered table-striped text-center mb-0">
+        <thead>
+          <tr>
+            <th>Order Number</th>
+            <th>Model Number</th>
+            <th>Platform</th>
+            <th>Purchase</th>
+            <th>Order Date</th>
+            <th>Delivery Date</th>
+            <th>Payment Mode</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if yet_to_deliver_orders %}
+            {% for o in yet_to_deliver_orders %}
+            <tr>
+              <td>{{ o.order_number }}</td>
+              <td>{{ o.model_number }}</td>
+              <td>{{ o.platform }}</td>
+              <td>₹{{ '%.2f'|format(o.purchase) }}</td>
+              <td>{{ o.order_date | datetimeformat }}</td>
+              <td>{{ o.order_delivered | datetimeformat }}</td>
+              <td>{{ o.payment_mode }}</td>
+              <td>
+  <div class="action-buttons">
+    <button class="btn btn-outline-info" title="View" onclick="viewOrder('{{ o.order_number }}')">
+      🔍
+    </button>
+    <button class="btn btn-outline-primary" title="Edit" onclick='editOrder({{ o | tojson | safe }})'>
+      ✏️
+    </button>
+    <input type="checkbox" class="form-check-input delivery-status-toggle"
+           data-order="{{ o.order_number }}"
+           {% if o.delivery_status == 1 %}checked{% endif %}>
+  </div>
+</td>
+
+
+            </tr>
+            {% endfor %}
+          {% else %}
+          <tr><td colspan="8">No yet-to-deliver orders found.</td></tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<!-- Charts -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+    window.allOwners   = {{ ['GS','GSW','DS','BS','NS','BK','JK','Others']|tojson }};
+    window.monthlyData = {{ monthly_data|tojson }};
+    window.yearlyData  = {{ yearly_data|tojson }};
+</script>
+<script src="{{ url_for('static', filename='js/script.js') }}"></script>
+
+</body>
+</html>

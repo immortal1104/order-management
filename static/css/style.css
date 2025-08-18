@@ -1,0 +1,56 @@
+﻿:root {
+  --font-sm: 12px;
+}
+body, input, select, textarea, .form-control, .btn {
+  font-family: 'Nunito', sans-serif;
+  font-size: var(--font-sm);
+}
+.admin-header {
+  font-size: 1.9rem;
+  font-weight: bold;
+  background: linear-gradient(to right, #2d62ff, #41efc4);
+  color: white;
+  padding: 1rem;
+  border-radius: 12px;
+  margin-bottom: 16px;
+  text-align: center;
+}
+.form-label {
+  font-weight: 600;
+}
+.btn-sm {
+  font-size: var(--font-sm);
+  padding: 4px 8px;
+}
+.form-control-sm {
+  padding: 3px 6px;
+  font-size: var(--font-sm);
+}
+.profit {
+  color: #19ad2b !important;
+  font-weight: bold;
+}
+.loss {
+  color: #f44336 !important;
+  font-weight: bold;
+}
+.file-link {
+  display: inline-block;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+table.dataTable thead th {
+  white-space: nowrap;
+  padding-right: 24px !important;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.alert {
+  font-size: var(--font-sm);
+}
+select.form-select-sm {
+  font-size: 0.85rem;
+  line-height: 1.2;
+}
