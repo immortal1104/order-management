@@ -1,48 +1,49 @@
-Order Management System
-Project Description:
+# Order Management System
 
-This is a full-featured, modern Order Management System built with Flask, designed to help small businesses, shops, and individuals effectively manage orders, payments, deliveries, and financial insights.
+A full-featured and modern Flask application for tracking, managing, and analyzing orders, payments, deliveries, and financials — designed for small businesses, shop owners, and individuals.
 
-Key features include:
+## Features
 
-Order Tracking: Add, edit, and view orders with details such as platform, product, payment mode, spend, profit/loss, delivery status, and customer contact.
+- **Order Tracking:** Add, edit, and view orders across multiple platforms.
+- **Delivery Management:** Update and mark delivery statuses, with automatic date recording.
+- **EMI Reminders:** Smart reminders for EMI payment orders, calculated using working days (excluding weekends and Indian public holidays via live Calendarific API).
+- **Financial Dashboard:** Interactive analytics for monthly/yearly spend, profit/loss, and owner/category breakdowns.
+- **File Management:** Upload order-related documents (screenshots, PDFs) with optional Google Drive backup via rclone.
+- **Secure Login:** Session-based authentication for safe access.
+- **Mobile-Friendly:** Responsive design for desktop and mobile views.
 
-EMI Reminders: Smart automated reminders for EMI payment modes, calculated using working days (excluding weekends and Indian public holidays via live API).
+## Technology Stack
 
-Delivery Management: Mark orders as delivered or pending, update statuses, and record delivery dates.
+- Python (Flask)
+- HTML, CSS, JavaScript (Bootstrap, Chart.js, DataTables)
+- Google Drive (via rclone)
+- Calendarific API for holiday detection
+- JSON file storage
 
-File Management: Upload and organize order-related files (screenshots, PDFs), with backup integration for Google Drive via rclone.
+## Installation
 
-Analytics Dashboard: View monthly/yearly spending, cash flow, and owner/category breakdowns with interactive charts.
+1. **Clone the Repository:**
+    ```
+    git clone https://github.com/your-username/order-management-system.git
+    cd order-management-system
+    ```
+2. **Install Dependencies:**
+    ```
+    pip install -r requirements.txt
+    ```
+3. **Set Calendarific API Key:**
+    Register at https://calendarific.com for a free API key.  
+    Set as environment variable:
+    ```
+    export CALENDARIFIC_API_KEY=your_actual_key
+    ```
+    Or update directly in `app.py`.
 
-Secure Login: Session-based login for secure access and privacy.
+4. **Run the App Locally:**
+    ```
+    python app.py
+    ```
 
-Mobile-Friendly UI: Responsive design for desktop and mobile.
+## License
 
-Technology Stack:
-
-Python (Flask)
-
-HTML/CSS/JavaScript (Bootstrap, Chart.js, DataTables)
-
-Google Drive/Cloud backup (via rclone)
-
-Calendarific API (for Indian holiday detection)
-
-JSON storage (orders, user data)
-
-Ideal Use Case:
-
-Shopkeepers, traders, service providers, or anyone needing seamless digital tracking and management of multi-platform orders, payments, and delivery workflow.
-
-How to Deploy:
-
-Works locally or on cloud platforms like Render.
-
-Easy setup: requirements in requirements.txt, one config file for credentials, ready for GitHub and CI/CD.
-
-Customization:
-
-Extendable to more platforms, user roles, dashboards.
-
-Holiday API logic can be adapted for any country or calendar.
+This project is open-source and free for personal and business use.
