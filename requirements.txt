@@ -1,5 +1,5 @@
 Flask
 gunicorn
-pycryptodome
-tenacity==8.2.3
-git+https://github.com/odwyersoftware/mega.py.git
+requests
+b2sdk
+werkzeug
