@@ -8,7 +8,7 @@ import requests
 from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify
 from werkzeug.utils import secure_filename
 
-from mega import Mega
+from b2sdk.v2 import InMemoryAccountInfo, B2Api
 
 # ---------------- APP CONFIG ----------------
 app = Flask(__name__)
@@ -24,27 +24,22 @@ USER_CREDENTIALS = {
     "7206491113.os@gmail.com": "bittu@123"
 }
 
-# --------- Mega.nz Config ---------
-MEGA_EMAIL = os.environ.get("MEGA_EMAIL")
-MEGA_PASSWORD = os.environ.get("MEGA_PASSWORD")
-MEGA_FOLDER_PATH = os.environ.get("MEGA_FOLDER_PATH", "/")   # e.g. "/" = root or "/YourFolder"
+# --------- Backblaze B2 Config ---------
+B2_KEY_ID = os.environ.get("B2_KEY_ID")
+B2_APP_KEY = os.environ.get("B2_APP_KEY")
+B2_BUCKET_NAME = os.environ.get("B2_BUCKET_NAME")
 
-def upload_file_mega(local_path, remote_folder_path=MEGA_FOLDER_PATH):
-    """Uploads a file to Mega.nz and returns a shareable link."""
-    mega = Mega()
-    try:
-        m = mega.login(MEGA_EMAIL, MEGA_PASSWORD)
-    except Exception as e:
-        raise Exception(f"Mega.nz login failed: {str(e)}")
-    # Navigate to or create the destination folder
-    folder = None
-    if remote_folder_path not in [None, "/", ""]:
-        folder = m.find(remote_folder_path)
-        if folder is None:
-            folder = m.create_folder(remote_folder_path)
-    uploaded = m.upload(local_path, dest=folder)
-    public_url = m.get_upload_link(uploaded)
-    return public_url
+def upload_file_b2(local_path):
+    """Uploads a file to Backblaze B2 and returns a public link."""
+    info = InMemoryAccountInfo()
+    b2_api = B2Api(info)
+    b2_api.authorize_account("production", B2_KEY_ID, B2_APP_KEY)
+    bucket = b2_api.get_bucket_by_name(B2_BUCKET_NAME)
+    file_name = os.path.basename(local_path)
+    with open(local_path, "rb") as f:
+        bucket.upload_bytes(f.read(), file_name)
+    download_url = f"https://f000.backblazeb2.com/file/{B2_BUCKET_NAME}/{file_name}"
+    return download_url
 
 # ------------------- UTILS -------------------
 def safe_slug(text):
@@ -137,7 +132,7 @@ def count_working_days(start, end, holidays_set):
     return count
 
 # ------------------- FILE HANDLER -------------------
-def save_files(files, fy, date_obj, order_no, platform, pay_mode, folder, remote_folder_id=None):
+def save_files(files, fy, date_obj, order_no, platform, pay_mode, folder):
     saved = []
     folder_path = os.path.join(app.config['UPLOAD_FOLDER'], fy, folder)
     os.makedirs(folder_path, exist_ok=True)
@@ -155,7 +150,7 @@ def save_files(files, fy, date_obj, order_no, platform, pay_mode, folder, remote
         local_path = os.path.join(folder_path, filename)
         file.save(local_path)
         try:
-            public_link = upload_file_mega(local_path)
+            public_link = upload_file_b2(local_path)
             saved.append({'link': public_link, 'path': public_link})
             os.remove(local_path)
         except Exception as e:
