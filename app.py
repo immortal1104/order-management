@@ -26,7 +26,7 @@ USER_CREDENTIALS = {
 B2_KEY_ID = os.environ.get("B2_KEY_ID")
 B2_APP_KEY = os.environ.get("B2_APP_KEY")
 B2_BUCKET_NAME = os.environ.get("B2_BUCKET_NAME")
-B2_ENDPOINT = "f005.backblazeb2.com"  # Adjust if your endpoint is f000 or another
+B2_ENDPOINT = "f005.backblazeb2.com"  # Adjust for your B2 endpoint if needed
 
 def safe_slug(text):
     text = text.lower().strip() if text else ''
@@ -125,21 +125,19 @@ def upload_file_b2(local_path):
     file_name = os.path.basename(local_path)
     uploaded = bucket.upload_bytes(open(local_path, "rb").read(), file_name)
     public_url = f"https://{B2_ENDPOINT}/file/{B2_BUCKET_NAME}/{file_name}"
-    file_id_url = f"https://{B2_ENDPOINT}/b2api/v1/b2_download_file_by_id?fileId={uploaded.id_}"
     return {
         "link": public_url,
         "fileId": uploaded.id_,
-        "name": file_name,
-        "fileIdUrl": file_id_url
+        "name": file_name
     }
 
 # ----- B2SDK FILE DELETE -----
-def delete_file_b2(file_id):
+def delete_file_b2(file_id, file_name):
     info = InMemoryAccountInfo()
     b2_api = B2Api(info)
     b2_api.authorize_account("production", B2_KEY_ID, B2_APP_KEY)
     bucket = b2_api.get_bucket_by_name(B2_BUCKET_NAME)
-    bucket.delete_file_version(file_id)
+    bucket.delete_file_version(file_id, file_name)
 
 def save_files(files, fy, date_obj, order_no, platform, pay_mode, folder):
     saved = []
@@ -427,11 +425,11 @@ def delete_file(order_number):
                     if f.get('link', f) == file_url:
                         file_entry = f
                         break
-    # New: Only use fileId for B2 delete
-    if file_entry and "fileId" in file_entry:
+    # Correct: Pass both fileId and file_name!
+    if file_entry and "fileId" in file_entry and "name" in file_entry:
         try:
-            delete_file_b2(file_entry["fileId"])
-            flash(f"File deleted from B2", "success")
+            delete_file_b2(file_entry["fileId"], file_entry["name"])
+            flash(f"File {file_entry['name']} deleted from B2", "success")
         except Exception as e:
             flash(f"Delete failed: {str(e)}", "danger")
         # Remove from order's file list
