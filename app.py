@@ -908,4 +908,5 @@ def mark_delivered():
 
 # ------------------- MAIN -------------------
 
-if __name_
+if __name__ == '__main__':
+    app.run(debug=True)
