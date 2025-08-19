@@ -4,12 +4,12 @@ import json
 from collections import defaultdict
 from datetime import datetime, date, timedelta
 import requests
-
 from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify
 from werkzeug.utils import secure_filename
+from pydrive2.auth import GoogleAuth
+from pydrive2.drive import GoogleDrive
 
-from b2sdk.v2 import InMemoryAccountInfo, B2Api
-
+# ---------------- APP CONFIG ----------------
 app = Flask(__name__)
 app.secret_key = 'super-secret-key'
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(minutes=15)
@@ -23,11 +23,31 @@ USER_CREDENTIALS = {
     "7206491113.os@gmail.com": "bittu@123"
 }
 
-B2_KEY_ID = os.environ.get("B2_KEY_ID")
-B2_APP_KEY = os.environ.get("B2_APP_KEY")
-B2_BUCKET_NAME = os.environ.get("B2_BUCKET_NAME")
-B2_ENDPOINT = "f005.backblazeb2.com"  # Adjust for your B2 endpoint if needed
+# ------------------- GOOGLE DRIVE SETUP -------------------
+SERVICE_ACCOUNT_PATH = os.environ.get("GDRIVE_CREDS", "/etc/secrets/credentials.json")
+with open(SERVICE_ACCOUNT_PATH) as f:
+    info = json.load(f)
+SERVICE_ACCOUNT_EMAIL = info['client_email']
 
+gauth = GoogleAuth()
+gauth.settings['client_config_backend'] = 'service'
+gauth.settings['service_config'] = {
+    "client_json_file_path": SERVICE_ACCOUNT_PATH,
+    "client_user_email": SERVICE_ACCOUNT_EMAIL  # Safe for most service account use
+}
+gauth.ServiceAuth()
+drive = GoogleDrive(gauth)
+
+def upload_file_pydrive(local_path, remote_folder_id=None):
+    file_drive = drive.CreateFile({'title': os.path.basename(local_path)})
+    if remote_folder_id:
+        file_drive['parents'] = [{'id': remote_folder_id}]
+    file_drive.SetContentFile(local_path)
+    file_drive.Upload()
+    file_drive.InsertPermission({'type': 'anyone', 'value': 'anyone', 'role': 'reader'})
+    return f"https://drive.google.com/open?id={file_drive['id']}"
+
+# ------------------- UTILS -------------------
 def safe_slug(text):
     text = text.lower().strip() if text else ''
     for tld in ['.com', '.net', '.org', '.in']:
@@ -90,6 +110,10 @@ def month_label(value):
     except:
         return value
 
+def generate_drive_open_link(file_id):
+    return f"https://drive.google.com/open?id={file_id}"
+
+# ------------- EMI/Working Day/Holiday LOGIC -------------
 def fetch_calendarific_holidays(year=None):
     if year is None:
         year = date.today().year
@@ -116,30 +140,8 @@ def count_working_days(start, end, holidays_set):
         current += timedelta(days=1)
     return count
 
-# ----- B2SDK FILE UPLOAD -----
-def upload_file_b2(local_path):
-    info = InMemoryAccountInfo()
-    b2_api = B2Api(info)
-    b2_api.authorize_account("production", B2_KEY_ID, B2_APP_KEY)
-    bucket = b2_api.get_bucket_by_name(B2_BUCKET_NAME)
-    file_name = os.path.basename(local_path)
-    uploaded = bucket.upload_bytes(open(local_path, "rb").read(), file_name)
-    public_url = f"https://{B2_ENDPOINT}/file/{B2_BUCKET_NAME}/{file_name}"
-    return {
-        "link": public_url,
-        "fileId": uploaded.id_,
-        "name": file_name
-    }
-
-# ----- B2SDK FILE DELETE -----
-def delete_file_b2(file_id, file_name):
-    info = InMemoryAccountInfo()
-    b2_api = B2Api(info)
-    b2_api.authorize_account("production", B2_KEY_ID, B2_APP_KEY)
-    bucket = b2_api.get_bucket_by_name(B2_BUCKET_NAME)
-    bucket.delete_file_version(file_id, file_name)
-
-def save_files(files, fy, date_obj, order_no, platform, pay_mode, folder):
+# ------------------- FILE HANDLER -------------------
+def save_files(files, fy, date_obj, order_no, platform, pay_mode, folder, remote_folder_id=None):
     saved = []
     folder_path = os.path.join(app.config['UPLOAD_FOLDER'], fy, folder)
     os.makedirs(folder_path, exist_ok=True)
@@ -157,15 +159,18 @@ def save_files(files, fy, date_obj, order_no, platform, pay_mode, folder):
         local_path = os.path.join(folder_path, filename)
         file.save(local_path)
         try:
-            info = upload_file_b2(local_path)
-            saved.append(info)
+            public_link = upload_file_pydrive(local_path, remote_folder_id=remote_folder_id)
+            saved.append({'link': public_link, 'path': public_link})
             os.remove(local_path)
         except Exception as e:
             flash(f"Upload failed for {filename}: {str(e)}", "danger")
+            saved.append({'link': f'/uploads/{fy}/{folder}/{filename}', 'path': local_path})
             continue
     return saved
 
-# ------------------- AUTH ROUTES -------------------
+DEFAULT_GDRIVE_FOLDER = os.environ.get("GDRIVE_FOLDER_ID", None)
+
+# ------------------- AUTH -------------------
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
@@ -221,7 +226,7 @@ def index():
             flash(emi_msg, 'emi')
     return render_template('index.html', orders=orders, date=date)
 
-# ------------------- DELIVERY STATUS UPDATE -------------------
+# ------------------- UPDATE DELIVERY STATUS -------------------
 @app.route('/update_delivery_status', methods=['POST'])
 def update_delivery_status():
     if 'user' not in session:
@@ -336,9 +341,9 @@ def add():
         date_obj = datetime.today()
     fy = get_financial_year(form.get('order_date') or date_obj.strftime('%Y-%m-%d'))
     screenshots = save_files(request.files.getlist('screenshots'), fy, date_obj, order_no,
-                             form.get('platform'), form.get('payment_mode'), 'screenshots')
+                             form.get('platform'), form.get('payment_mode'), 'screenshots', remote_folder_id=DEFAULT_GDRIVE_FOLDER)
     pdfs = save_files(request.files.getlist('pdfs'), fy, date_obj, order_no,
-                      form.get('platform'), form.get('payment_mode'), 'pdfs')
+                      form.get('platform'), form.get('payment_mode'), 'pdfs', remote_folder_id=DEFAULT_GDRIVE_FOLDER)
     orders.append({
         'platform': form.get('platform'),
         'order_number': order_no,
@@ -363,7 +368,7 @@ def add():
     return redirect(url_for('index'))
 
 # ------------------- EDIT ORDER -------------------
-@app.route('/edit/<order_number>', methods=['POST'])
+@app.route('/edit/', methods=['POST'])
 def edit(order_number):
     if 'user' not in session:
         return redirect(url_for('login'))
@@ -384,9 +389,9 @@ def edit(order_number):
         date_obj = datetime.today()
     fy = get_financial_year(form.get('order_date') or date_obj.strftime('%Y-%m-%d'))
     screenshots = save_files(request.files.getlist('screenshots'), fy, date_obj, updated_number,
-                             form.get('platform'), form.get('payment_mode'), 'screenshots')
+                             form.get('platform'), form.get('payment_mode'), 'screenshots', remote_folder_id=DEFAULT_GDRIVE_FOLDER)
     pdfs = save_files(request.files.getlist('pdfs'), fy, date_obj, updated_number,
-                      form.get('platform'), form.get('payment_mode'), 'pdfs')
+                      form.get('platform'), form.get('payment_mode'), 'pdfs', remote_folder_id=DEFAULT_GDRIVE_FOLDER)
     order.update({
         'platform': form.get('platform'),
         'order_number': updated_number,
@@ -411,40 +416,23 @@ def edit(order_number):
     return redirect(url_for('index'))
 
 # ------------------- DELETE FILE -------------------
-@app.route('/delete-file/<order_number>', methods=['POST'])
+@app.route('/delete-file/', methods=['POST'])
 def delete_file(order_number):
     if 'user' not in session:
         return redirect(url_for('login'))
-    file_url = request.form.get('filepath')
+    filepath = request.form.get('filepath')
     load_orders()
-    file_entry = None
     for o in orders:
         if o['order_number'] == order_number:
             for key in ['screenshots', 'pdfs']:
-                for f in o.get(key, []):
-                    if f.get('link', f) == file_url:
-                        file_entry = f
-                        break
-    # Correct: Pass both fileId and file_name!
-    if file_entry and "fileId" in file_entry and "name" in file_entry:
-        try:
-            delete_file_b2(file_entry["fileId"], file_entry["name"])
-            flash(f"File {file_entry['name']} deleted from B2", "success")
-        except Exception as e:
-            flash(f"Delete failed: {str(e)}", "danger")
-        # Remove from order's file list
-        for o in orders:
-            if o['order_number'] == order_number:
-                for key in ['screenshots', 'pdfs']:
-                    o[key] = [f for f in o.get(key, []) if f.get('link', f) != file_url]
-                break
-        save_orders()
-    else:
-        flash("Delete failed: fileId not found", "danger")
+                o[key] = [f for f in o.get(key, [])
+                          if (f != filepath and f.get('path') != filepath if isinstance(f, dict) else True)]
+            break
+    save_orders()
     return redirect(url_for('index'))
 
 # ------------------- DELETE ORDER -------------------
-@app.route('/delete/<order_number>', methods=['POST'])
+@app.route('/delete/', methods=['POST'])
 def delete_order(order_number):
     if 'user' not in session:
         return redirect(url_for('login'))
@@ -493,5 +481,6 @@ def mark_delivered():
             return jsonify(success=True)
     return jsonify(success=False)
 
+# ------------------- MAIN -------------------
 if __name__ == '__main__':
     app.run(debug=True)
