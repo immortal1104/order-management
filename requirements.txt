@@ -1,5 +1,5 @@
 Flask
 gunicorn
-requests>=2.32.0
 mega.py
 tenacity>=8.3.0
+pycryptodome
