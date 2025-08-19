@@ -49,15 +49,14 @@ USER_CREDENTIALS = {
 # ------------------- GOOGLE DRIVE SETUP -------------------
 
 gauth = GoogleAuth()
-if os.path.exists('mycreds.txt'):
-    gauth.LoadCredentialsFile('mycreds.txt')
+gauth.LoadCredentialsFile("mycreds.txt")
 
 if not gauth.credentials or gauth.access_token_expired:
-    try:
-        gauth.CommandLineAuth()
-    except:
+    if gauth.credentials and getattr(gauth.credentials, 'refresh_token', None):
+        gauth.Refresh()
+    else:
         gauth.LocalWebserverAuth()
-    gauth.SaveCredentialsFile('mycreds.txt')
+    gauth.SaveCredentialsFile("mycreds.txt")
 else:
     gauth.Authorize()
 
