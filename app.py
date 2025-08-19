@@ -25,11 +25,15 @@ USER_CREDENTIALS = {
 
 # ------------------- GOOGLE DRIVE SETUP -------------------
 SERVICE_ACCOUNT_PATH = os.environ.get("GDRIVE_CREDS", "/etc/secrets/credentials.json")
+with open(SERVICE_ACCOUNT_PATH) as f:
+    info = json.load(f)
+SERVICE_ACCOUNT_EMAIL = info['client_email']
 
 gauth = GoogleAuth()
 gauth.settings['client_config_backend'] = 'service'
 gauth.settings['service_config'] = {
-    "client_json_file_path": SERVICE_ACCOUNT_PATH
+    "client_json_file_path": SERVICE_ACCOUNT_PATH,
+    "client_user_email": SERVICE_ACCOUNT_EMAIL  # Safe for most service account use
 }
 gauth.ServiceAuth()
 drive = GoogleDrive(gauth)
