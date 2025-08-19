@@ -379,30 +379,39 @@ def add():
 
 # ------------------- EDIT ORDER -------------------
 
-@app.route('/edit/', methods=['POST'])
+@app.route('/edit/<order_number>', methods=['POST'])
 def edit(order_number):
     if 'user' not in session:
         return redirect(url_for('login'))
+
     global orders
     load_orders()
     order = next((o for o in orders if o['order_number'] == order_number), None)
     if not order:
         flash("Order not found", "danger")
         return redirect(url_for('index'))
+
     form = request.form
     updated_number = form.get('order_number', '').strip()
     if updated_number != order_number and any(o['order_number'] == updated_number for o in orders):
         flash("Duplicate order number", "danger")
         return redirect(url_for('index'))
+
     try:
         date_obj = datetime.strptime(form.get('order_date'), '%Y-%m-%d')
     except:
         date_obj = datetime.today()
     fy = get_financial_year(form.get('order_date') or date_obj.strftime('%Y-%m-%d'))
-    screenshots = save_files(request.files.getlist('screenshots'), fy, date_obj, updated_number,
-                             form.get('platform'), form.get('payment_mode'), 'screenshots')
-    pdfs = save_files(request.files.getlist('pdfs'), fy, date_obj, updated_number,
-                      form.get('platform'), form.get('payment_mode'), 'pdfs')
+
+    screenshots = save_files(
+        request.files.getlist('screenshots'), fy, date_obj, updated_number,
+        form.get('platform'), form.get('payment_mode'), 'screenshots'
+    )
+    pdfs = save_files(
+        request.files.getlist('pdfs'), fy, date_obj, updated_number,
+        form.get('platform'), form.get('payment_mode'), 'pdfs'
+    )
+
     order.update({
         'platform': form.get('platform'),
         'order_number': updated_number,
@@ -428,10 +437,11 @@ def edit(order_number):
 
 # ------------------- DELETE FILE -------------------
 
-@app.route('/delete-file/', methods=['POST'])
+@app.route('/delete-file/<order_number>', methods=['POST'])
 def delete_file(order_number):
     if 'user' not in session:
         return redirect(url_for('login'))
+
     filepath = request.form.get('filepath')
     load_orders()
     for o in orders:
@@ -445,10 +455,11 @@ def delete_file(order_number):
 
 # ------------------- DELETE ORDER -------------------
 
-@app.route('/delete/', methods=['POST'])
+@app.route('/delete/<order_number>', methods=['POST'])
 def delete_order(order_number):
     if 'user' not in session:
         return redirect(url_for('login'))
+
     global orders
     load_orders()
     orders = [o for o in orders if o['order_number'] != order_number]
