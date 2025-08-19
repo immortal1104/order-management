@@ -251,9 +251,11 @@ td .delivery-status-toggle {
           {% set ext = 'open' %}
         {% endif %}
         <div class="d-flex align-items-center gap-2 mb-1">
-          <a href="{{ file_link }}" target="_blank" class="file-link">{{ base_name }}/{{ ext }}</a>
+          <a href="{{ file_link }}" target="_blank" class="file-link">
+            <img src="{{ file_link }}" style="max-width:80px;max-height:80px;" title="{{ base_name }}/{{ ext }}">
+          </a>
           <form method="POST" action="/delete-file/{{ o.order_number }}" style="display:inline;" onsubmit="return confirm('Delete this file?');">
-            <input type="hidden" name="filepath" value="{{ file_path }}">
+            <input type="hidden" name="filepath" value="{{ file_link }}">
             <button type="submit" class="btn btn-sm btn-danger py-0 px-1" title="Delete File">🗑</button>
           </form>
         </div>
@@ -277,9 +279,11 @@ td .delivery-status-toggle {
           {% set ext = 'open' %}
         {% endif %}
         <div class="d-flex align-items-center gap-2 mb-1">
-          <a href="{{ file_link }}" target="_blank" class="file-link">{{ base_name }}/{{ ext }}</a>
+          <a href="{{ file_link }}" target="_blank" class="file-link">
+             {{ base_name }}/{{ ext }}
+          </a>
           <form method="POST" action="/delete-file/{{ o.order_number }}" style="display:inline;" onsubmit="return confirm('Delete this file?');">
-            <input type="hidden" name="filepath" value="{{ file_path }}">
+            <input type="hidden" name="filepath" value="{{ file_link }}">
             <button type="submit" class="btn btn-sm btn-danger py-0 px-1" title="Delete File">🗑</button>
           </form>
         </div>
