@@ -1,5 +1,5 @@
 Flask
 gunicorn
 requests
-b2sdk
-werkzeug
+pydrive2
+
