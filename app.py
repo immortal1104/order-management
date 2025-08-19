@@ -24,17 +24,13 @@ USER_CREDENTIALS = {
 }
 
 # ------------------- GOOGLE DRIVE SETUP -------------------
+# Service Account credentials: place service account JSON as /credentials.json
 gauth = GoogleAuth()
-if os.path.exists('mycreds.txt'):
-    gauth.LoadCredentialsFile('mycreds.txt')
-    if not gauth.credentials or gauth.access_token_expired:
-        try:
-            gauth.CommandLineAuth()
-        except:
-            gauth.LocalWebserverAuth()
-        gauth.SaveCredentialsFile('mycreds.txt')
-else:
-    gauth.Authorize()
+gauth.settings['client_config_backend'] = 'service'
+gauth.settings['service_config'] = {
+    "client_service_account": "/credentials.json"
+}
+gauth.ServiceAuth()
 drive = GoogleDrive(gauth)
 
 def upload_file_pydrive(local_path, remote_folder_id=None):
@@ -44,7 +40,6 @@ def upload_file_pydrive(local_path, remote_folder_id=None):
     file_drive.SetContentFile(local_path)
     file_drive.Upload()
     file_drive.InsertPermission({'type': 'anyone', 'value': 'anyone', 'role': 'reader'})
-    # Always store open?id link
     return f"https://drive.google.com/open?id={file_drive['id']}"
 
 # ------------------- UTILS -------------------
@@ -141,7 +136,8 @@ def count_working_days(start, end, holidays_set):
     return count
 
 # ------------------- FILE HANDLER -------------------
-def save_files(files, fy, date_obj, order_no, platform, pay_mode, folder):
+# Now supports dynamic folder switching
+def save_files(files, fy, date_obj, order_no, platform, pay_mode, folder, remote_folder_id=None):
     saved = []
     folder_path = os.path.join(app.config['UPLOAD_FOLDER'], fy, folder)
     os.makedirs(folder_path, exist_ok=True)
@@ -159,7 +155,7 @@ def save_files(files, fy, date_obj, order_no, platform, pay_mode, folder):
         local_path = os.path.join(folder_path, filename)
         file.save(local_path)
         try:
-            public_link = upload_file_pydrive(local_path, remote_folder_id=None)
+            public_link = upload_file_pydrive(local_path, remote_folder_id=remote_folder_id)
             saved.append({'link': public_link, 'path': public_link})
             os.remove(local_path)
         except Exception as e:
@@ -167,6 +163,9 @@ def save_files(files, fy, date_obj, order_no, platform, pay_mode, folder):
             saved.append({'link': f'/uploads/{fy}/{folder}/{filename}', 'path': local_path})
             continue
     return saved
+
+# Choose the default folder via ENV or use None for Drive root
+DEFAULT_GDRIVE_FOLDER = os.environ.get("GDRIVE_FOLDER_ID", None)
 
 # ------------------- AUTH -------------------
 @app.route('/login', methods=['GET', 'POST'])
@@ -338,10 +337,11 @@ def add():
     except:
         date_obj = datetime.today()
     fy = get_financial_year(form.get('order_date') or date_obj.strftime('%Y-%m-%d'))
+    # Folder ID can come from ENV or be set for each upload
     screenshots = save_files(request.files.getlist('screenshots'), fy, date_obj, order_no,
-                             form.get('platform'), form.get('payment_mode'), 'screenshots')
+                             form.get('platform'), form.get('payment_mode'), 'screenshots', remote_folder_id=DEFAULT_GDRIVE_FOLDER)
     pdfs = save_files(request.files.getlist('pdfs'), fy, date_obj, order_no,
-                      form.get('platform'), form.get('payment_mode'), 'pdfs')
+                      form.get('platform'), form.get('payment_mode'), 'pdfs', remote_folder_id=DEFAULT_GDRIVE_FOLDER)
     orders.append({
         'platform': form.get('platform'),
         'order_number': order_no,
@@ -366,7 +366,7 @@ def add():
     return redirect(url_for('index'))
 
 # ------------------- EDIT ORDER -------------------
-@app.route('/edit/<order_number>', methods=['POST'])
+@app.route('/edit/', methods=['POST'])
 def edit(order_number):
     if 'user' not in session:
         return redirect(url_for('login'))
@@ -387,9 +387,9 @@ def edit(order_number):
         date_obj = datetime.today()
     fy = get_financial_year(form.get('order_date') or date_obj.strftime('%Y-%m-%d'))
     screenshots = save_files(request.files.getlist('screenshots'), fy, date_obj, updated_number,
-                             form.get('platform'), form.get('payment_mode'), 'screenshots')
+                             form.get('platform'), form.get('payment_mode'), 'screenshots', remote_folder_id=DEFAULT_GDRIVE_FOLDER)
     pdfs = save_files(request.files.getlist('pdfs'), fy, date_obj, updated_number,
-                      form.get('platform'), form.get('payment_mode'), 'pdfs')
+                      form.get('platform'), form.get('payment_mode'), 'pdfs', remote_folder_id=DEFAULT_GDRIVE_FOLDER)
     order.update({
         'platform': form.get('platform'),
         'order_number': updated_number,
@@ -414,7 +414,7 @@ def edit(order_number):
     return redirect(url_for('index'))
 
 # ------------------- DELETE FILE -------------------
-@app.route('/delete-file/<order_number>', methods=['POST'])
+@app.route('/delete-file/', methods=['POST'])
 def delete_file(order_number):
     if 'user' not in session:
         return redirect(url_for('login'))
@@ -423,30 +423,14 @@ def delete_file(order_number):
     for o in orders:
         if o['order_number'] == order_number:
             for key in ['screenshots', 'pdfs']:
-                newfiles = []
-                for f in o.get(key, []):
-                    file_link = f.get('link') if isinstance(f, dict) else f
-                    file_path = f.get('path') if isinstance(f, dict) else f
-                    if filepath == file_path or filepath == file_link:
-                        # Remove from Google Drive if it's a drive link
-                        match = re.search(r'id=([a-zA-Z0-9_-]+)', file_link)
-                        if match:
-                            file_id = match.group(1)
-                            try:
-                                gfile = drive.CreateFile({'id': file_id})
-                                gfile.Delete()
-                                flash("✅ File deleted from Google Drive", "info")
-                            except Exception as e:
-                                flash(f"⚠️ Error deleting from Google Drive: {str(e)}", "danger")
-                    else:
-                        newfiles.append(f)
-                o[key] = newfiles
+                o[key] = [f for f in o.get(key, [])
+                          if (f != filepath and f.get('path') != filepath if isinstance(f, dict) else True)]
             break
     save_orders()
     return redirect(url_for('index'))
 
 # ------------------- DELETE ORDER -------------------
-@app.route('/delete/<order_number>', methods=['POST'])
+@app.route('/delete/', methods=['POST'])
 def delete_order(order_number):
     if 'user' not in session:
         return redirect(url_for('login'))
