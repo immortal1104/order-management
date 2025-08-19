@@ -3,5 +3,3 @@ gunicorn==23.0.0
 mega.py==1.0.8
 tenacity>=8.3.0
 pycryptodome==3.21.0
-# Block pycrypto
-pycrypto @ file:///dev/null
