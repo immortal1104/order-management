@@ -2,4 +2,4 @@ Flask
 gunicorn
 pycryptodome
 tenacity==8.2.3
-git+https://github.com/odwyersoftware/mega.py.git#egg=mega.py
+git+https://github.com/odwyersoftware/mega.py.git
