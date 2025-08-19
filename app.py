@@ -33,7 +33,7 @@ gauth = GoogleAuth()
 gauth.settings['client_config_backend'] = 'service'
 gauth.settings['service_config'] = {
     "client_json_file_path": SERVICE_ACCOUNT_PATH,
-    "client_user_email": SERVICE_ACCOUNT_EMAIL  # Safe for most service account use
+    "client_user_email": SERVICE_ACCOUNT_EMAIL
 }
 gauth.ServiceAuth()
 drive = GoogleDrive(gauth)
@@ -368,7 +368,7 @@ def add():
     return redirect(url_for('index'))
 
 # ------------------- EDIT ORDER -------------------
-@app.route('/edit/', methods=['POST'])
+@app.route('/edit/<order_number>', methods=['POST'])
 def edit(order_number):
     if 'user' not in session:
         return redirect(url_for('login'))
@@ -416,7 +416,7 @@ def edit(order_number):
     return redirect(url_for('index'))
 
 # ------------------- DELETE FILE -------------------
-@app.route('/delete-file/', methods=['POST'])
+@app.route('/delete-file/<order_number>', methods=['POST'])
 def delete_file(order_number):
     if 'user' not in session:
         return redirect(url_for('login'))
@@ -432,7 +432,7 @@ def delete_file(order_number):
     return redirect(url_for('index'))
 
 # ------------------- DELETE ORDER -------------------
-@app.route('/delete/', methods=['POST'])
+@app.route('/delete/<order_number>', methods=['POST'])
 def delete_order(order_number):
     if 'user' not in session:
         return redirect(url_for('login'))
