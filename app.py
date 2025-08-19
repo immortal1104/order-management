@@ -143,8 +143,11 @@ def delete_file_b2(file_name):
     b2_api = B2Api(info)
     b2_api.authorize_account("production", B2_KEY_ID, B2_APP_KEY)
     bucket = b2_api.get_bucket_by_name(B2_BUCKET_NAME)
+    # get_file_info_by_name returns an object, not a dict!
     file_info = bucket.get_file_info_by_name(file_name)
-    bucket.delete_file_version(file_name, file_info['fileId'])
+    file_id = file_info.id_  # Use attribute, not dict key!
+    bucket.delete_file_version(file_name, file_id)
+
 
 def save_files(files, fy, date_obj, order_no, platform, pay_mode, folder):
     saved = []
