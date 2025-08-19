@@ -4,10 +4,11 @@ import json
 from collections import defaultdict
 from datetime import datetime, date, timedelta
 import requests
+
 from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify
 from werkzeug.utils import secure_filename
-from pydrive2.auth import GoogleAuth
-from pydrive2.drive import GoogleDrive
+
+from mega import Mega
 
 # ---------------- APP CONFIG ----------------
 app = Flask(__name__)
@@ -23,29 +24,27 @@ USER_CREDENTIALS = {
     "7206491113.os@gmail.com": "bittu@123"
 }
 
-# ------------------- GOOGLE DRIVE SETUP -------------------
-SERVICE_ACCOUNT_PATH = os.environ.get("GDRIVE_CREDS", "/etc/secrets/credentials.json")
-with open(SERVICE_ACCOUNT_PATH) as f:
-    info = json.load(f)
-SERVICE_ACCOUNT_EMAIL = info['client_email']
+# --------- Mega.nz Config ---------
+MEGA_EMAIL = os.environ.get("MEGA_EMAIL")
+MEGA_PASSWORD = os.environ.get("MEGA_PASSWORD")
+MEGA_FOLDER_PATH = os.environ.get("MEGA_FOLDER_PATH", "/")   # e.g. "/" = root or "/YourFolder"
 
-gauth = GoogleAuth()
-gauth.settings['client_config_backend'] = 'service'
-gauth.settings['service_config'] = {
-    "client_json_file_path": SERVICE_ACCOUNT_PATH,
-    "client_user_email": SERVICE_ACCOUNT_EMAIL
-}
-gauth.ServiceAuth()
-drive = GoogleDrive(gauth)
-
-def upload_file_pydrive(local_path, remote_folder_id=None):
-    file_drive = drive.CreateFile({'title': os.path.basename(local_path)})
-    if remote_folder_id:
-        file_drive['parents'] = [{'id': remote_folder_id}]
-    file_drive.SetContentFile(local_path)
-    file_drive.Upload()
-    file_drive.InsertPermission({'type': 'anyone', 'value': 'anyone', 'role': 'reader'})
-    return f"https://drive.google.com/open?id={file_drive['id']}"
+def upload_file_mega(local_path, remote_folder_path=MEGA_FOLDER_PATH):
+    """Uploads a file to Mega.nz and returns a shareable link."""
+    mega = Mega()
+    try:
+        m = mega.login(MEGA_EMAIL, MEGA_PASSWORD)
+    except Exception as e:
+        raise Exception(f"Mega.nz login failed: {str(e)}")
+    # Navigate to or create the destination folder
+    folder = None
+    if remote_folder_path not in [None, "/", ""]:
+        folder = m.find(remote_folder_path)
+        if folder is None:
+            folder = m.create_folder(remote_folder_path)
+    uploaded = m.upload(local_path, dest=folder)
+    public_url = m.get_upload_link(uploaded)
+    return public_url
 
 # ------------------- UTILS -------------------
 def safe_slug(text):
@@ -110,9 +109,6 @@ def month_label(value):
     except:
         return value
 
-def generate_drive_open_link(file_id):
-    return f"https://drive.google.com/open?id={file_id}"
-
 # ------------- EMI/Working Day/Holiday LOGIC -------------
 def fetch_calendarific_holidays(year=None):
     if year is None:
@@ -159,7 +155,7 @@ def save_files(files, fy, date_obj, order_no, platform, pay_mode, folder, remote
         local_path = os.path.join(folder_path, filename)
         file.save(local_path)
         try:
-            public_link = upload_file_pydrive(local_path, remote_folder_id=remote_folder_id)
+            public_link = upload_file_mega(local_path)
             saved.append({'link': public_link, 'path': public_link})
             os.remove(local_path)
         except Exception as e:
@@ -167,8 +163,6 @@ def save_files(files, fy, date_obj, order_no, platform, pay_mode, folder, remote
             saved.append({'link': f'/uploads/{fy}/{folder}/{filename}', 'path': local_path})
             continue
     return saved
-
-DEFAULT_GDRIVE_FOLDER = os.environ.get("GDRIVE_FOLDER_ID", None)
 
 # ------------------- AUTH -------------------
 @app.route('/login', methods=['GET', 'POST'])
@@ -341,9 +335,9 @@ def add():
         date_obj = datetime.today()
     fy = get_financial_year(form.get('order_date') or date_obj.strftime('%Y-%m-%d'))
     screenshots = save_files(request.files.getlist('screenshots'), fy, date_obj, order_no,
-                             form.get('platform'), form.get('payment_mode'), 'screenshots', remote_folder_id=DEFAULT_GDRIVE_FOLDER)
+                             form.get('platform'), form.get('payment_mode'), 'screenshots')
     pdfs = save_files(request.files.getlist('pdfs'), fy, date_obj, order_no,
-                      form.get('platform'), form.get('payment_mode'), 'pdfs', remote_folder_id=DEFAULT_GDRIVE_FOLDER)
+                      form.get('platform'), form.get('payment_mode'), 'pdfs')
     orders.append({
         'platform': form.get('platform'),
         'order_number': order_no,
@@ -389,9 +383,9 @@ def edit(order_number):
         date_obj = datetime.today()
     fy = get_financial_year(form.get('order_date') or date_obj.strftime('%Y-%m-%d'))
     screenshots = save_files(request.files.getlist('screenshots'), fy, date_obj, updated_number,
-                             form.get('platform'), form.get('payment_mode'), 'screenshots', remote_folder_id=DEFAULT_GDRIVE_FOLDER)
+                             form.get('platform'), form.get('payment_mode'), 'screenshots')
     pdfs = save_files(request.files.getlist('pdfs'), fy, date_obj, updated_number,
-                      form.get('platform'), form.get('payment_mode'), 'pdfs', remote_folder_id=DEFAULT_GDRIVE_FOLDER)
+                      form.get('platform'), form.get('payment_mode'), 'pdfs')
     order.update({
         'platform': form.get('platform'),
         'order_number': updated_number,
