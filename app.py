@@ -24,13 +24,11 @@ USER_CREDENTIALS = {
     "7206491113.os@gmail.com": "bittu@123"
 }
 
-# --------- Backblaze B2 Setup ---------
 B2_KEY_ID = os.environ.get("B2_KEY_ID")
 B2_APP_KEY = os.environ.get("B2_APP_KEY")
 B2_BUCKET_NAME = os.environ.get("B2_BUCKET_NAME")
-B2_ENDPOINT = "f005.backblazeb2.com"  # Use your actual endpoint, e.g., "f000.backblazeb2.com" if that's what your public links use
+B2_ENDPOINT = "f005.backblazeb2.com"  # Use "f000" or your actual endpoint
 
-# --------- UTILITY FUNCTIONS -----------
 def safe_slug(text):
     text = text.lower().strip() if text else ''
     for tld in ['.com', '.net', '.org', '.in']:
@@ -78,7 +76,6 @@ def get_financial_year(date_str):
         dt = datetime.today()
     return f"{dt.year}-{dt.year+1}" if dt.month >= 4 else f"{dt.year-1}-{dt.year}"
 
-# ------------- JINJA FILTERS -------------
 @app.template_filter()
 def datetimeformat(value, fmt='%d %b %Y'):
     try:
@@ -94,7 +91,6 @@ def month_label(value):
     except:
         return value
 
-# ------ EMI/Holiday Logic -------
 def fetch_calendarific_holidays(year=None):
     if year is None:
         year = date.today().year
@@ -121,7 +117,7 @@ def count_working_days(start, end, holidays_set):
         current += timedelta(days=1)
     return count
 
-# ------------ B2 FILE HANDLING -----------
+# ------------ B2SDK FILE UPLOAD ----------
 def upload_file_b2(local_path):
     info = InMemoryAccountInfo()
     b2_api = B2Api(info)
@@ -138,16 +134,13 @@ def upload_file_b2(local_path):
         "fileIdUrl": file_id_url
     }
 
-def delete_file_b2(file_name):
+# ------------ B2SDK FILE DELETE ----------
+def delete_file_b2(file_name, file_id):
     info = InMemoryAccountInfo()
     b2_api = B2Api(info)
     b2_api.authorize_account("production", B2_KEY_ID, B2_APP_KEY)
     bucket = b2_api.get_bucket_by_name(B2_BUCKET_NAME)
-    # get_file_info_by_name returns an object, not a dict!
-    file_info = bucket.get_file_info_by_name(file_name)
-    file_id = file_info.id_  # Use attribute, not dict key!
     bucket.delete_file_version(file_name, file_id)
-
 
 def save_files(files, fy, date_obj, order_no, platform, pay_mode, folder):
     saved = []
@@ -204,7 +197,7 @@ def check_order_exists():
     order_no = request.json.get('order_number', '').strip()
     return jsonify({'exists': any(o['order_number'] == order_no for o in orders)})
 
-# ------------------- INDEX PAGE -------------------
+# ------------------- INDEX -------------------
 @app.route('/')
 def index():
     if 'user' not in session:
@@ -426,19 +419,30 @@ def delete_file(order_number):
     if 'user' not in session:
         return redirect(url_for('login'))
     file_url = request.form.get('filepath')
-    file_name = os.path.basename(file_url)
-    try:
-        delete_file_b2(file_name)
-        flash(f"File {file_name} deleted from B2", "success")
-    except Exception as e:
-        flash(f"Delete failed: {str(e)}", "danger")
     load_orders()
+    file_entry = None
     for o in orders:
         if o['order_number'] == order_number:
             for key in ['screenshots', 'pdfs']:
-                o[key] = [f for f in o.get(key, []) if f.get('link', f) != file_url]
-            break
-    save_orders()
+                for f in o.get(key, []):
+                    if f.get('link', f) == file_url:
+                        file_entry = f
+                        break
+    if file_entry and "fileId" in file_entry and "name" in file_entry:
+        try:
+            delete_file_b2(file_entry["name"], file_entry["fileId"])
+            flash(f"File {file_entry['name']} deleted from B2", "success")
+        except Exception as e:
+            flash(f"Delete failed: {str(e)}", "danger")
+        # Remove from the order files list
+        for o in orders:
+            if o['order_number'] == order_number:
+                for key in ['screenshots', 'pdfs']:
+                    o[key] = [f for f in o.get(key, []) if f.get('link', f) != file_url]
+                break
+        save_orders()
+    else:
+        flash("Delete failed: fileId not found", "danger")
     return redirect(url_for('index'))
 
 # ------------------- DELETE ORDER -------------------
@@ -491,6 +495,5 @@ def mark_delivered():
             return jsonify(success=True)
     return jsonify(success=False)
 
-# ------------------- MAIN -------------------
 if __name__ == '__main__':
     app.run(debug=True)
