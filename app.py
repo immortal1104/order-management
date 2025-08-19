@@ -24,11 +24,12 @@ USER_CREDENTIALS = {
 }
 
 # ------------------- GOOGLE DRIVE SETUP -------------------
-# Service Account credentials: place service account JSON as /credentials.json
+SERVICE_ACCOUNT_PATH = os.environ.get("GDRIVE_CREDS", "/etc/secrets/credentials.json")
+
 gauth = GoogleAuth()
 gauth.settings['client_config_backend'] = 'service'
 gauth.settings['service_config'] = {
-    "client_service_account": "/credentials.json"
+    "client_json_file_path": SERVICE_ACCOUNT_PATH
 }
 gauth.ServiceAuth()
 drive = GoogleDrive(gauth)
@@ -136,7 +137,6 @@ def count_working_days(start, end, holidays_set):
     return count
 
 # ------------------- FILE HANDLER -------------------
-# Now supports dynamic folder switching
 def save_files(files, fy, date_obj, order_no, platform, pay_mode, folder, remote_folder_id=None):
     saved = []
     folder_path = os.path.join(app.config['UPLOAD_FOLDER'], fy, folder)
@@ -164,7 +164,6 @@ def save_files(files, fy, date_obj, order_no, platform, pay_mode, folder, remote
             continue
     return saved
 
-# Choose the default folder via ENV or use None for Drive root
 DEFAULT_GDRIVE_FOLDER = os.environ.get("GDRIVE_FOLDER_ID", None)
 
 # ------------------- AUTH -------------------
@@ -337,7 +336,6 @@ def add():
     except:
         date_obj = datetime.today()
     fy = get_financial_year(form.get('order_date') or date_obj.strftime('%Y-%m-%d'))
-    # Folder ID can come from ENV or be set for each upload
     screenshots = save_files(request.files.getlist('screenshots'), fy, date_obj, order_no,
                              form.get('platform'), form.get('payment_mode'), 'screenshots', remote_folder_id=DEFAULT_GDRIVE_FOLDER)
     pdfs = save_files(request.files.getlist('pdfs'), fy, date_obj, order_no,
