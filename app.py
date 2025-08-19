@@ -10,7 +10,7 @@ from werkzeug.utils import secure_filename
 
 from b2sdk.v2 import InMemoryAccountInfo, B2Api
 
-# ---------------- APP CONFIG ----------------
+# ------------ CONFIGURATION -------------
 app = Flask(__name__)
 app.secret_key = 'super-secret-key'
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(minutes=15)
@@ -24,24 +24,13 @@ USER_CREDENTIALS = {
     "7206491113.os@gmail.com": "bittu@123"
 }
 
-# --------- Backblaze B2 Config ---------
+# --------- Backblaze B2 Setup ---------
 B2_KEY_ID = os.environ.get("B2_KEY_ID")
 B2_APP_KEY = os.environ.get("B2_APP_KEY")
 B2_BUCKET_NAME = os.environ.get("B2_BUCKET_NAME")
+B2_ENDPOINT = "f005.backblazeb2.com"  # Use your actual endpoint, e.g., "f000.backblazeb2.com" if that's what your public links use
 
-def upload_file_b2(local_path):
-    """Uploads a file to Backblaze B2 and returns a public link."""
-    info = InMemoryAccountInfo()
-    b2_api = B2Api(info)
-    b2_api.authorize_account("production", B2_KEY_ID, B2_APP_KEY)
-    bucket = b2_api.get_bucket_by_name(B2_BUCKET_NAME)
-    file_name = os.path.basename(local_path)
-    with open(local_path, "rb") as f:
-        bucket.upload_bytes(f.read(), file_name)
-    download_url = f"https://f000.backblazeb2.com/file/{B2_BUCKET_NAME}/{file_name}"
-    return download_url
-
-# ------------------- UTILS -------------------
+# --------- UTILITY FUNCTIONS -----------
 def safe_slug(text):
     text = text.lower().strip() if text else ''
     for tld in ['.com', '.net', '.org', '.in']:
@@ -89,6 +78,7 @@ def get_financial_year(date_str):
         dt = datetime.today()
     return f"{dt.year}-{dt.year+1}" if dt.month >= 4 else f"{dt.year-1}-{dt.year}"
 
+# ------------- JINJA FILTERS -------------
 @app.template_filter()
 def datetimeformat(value, fmt='%d %b %Y'):
     try:
@@ -104,7 +94,7 @@ def month_label(value):
     except:
         return value
 
-# ------------- EMI/Working Day/Holiday LOGIC -------------
+# ------ EMI/Holiday Logic -------
 def fetch_calendarific_holidays(year=None):
     if year is None:
         year = date.today().year
@@ -131,7 +121,31 @@ def count_working_days(start, end, holidays_set):
         current += timedelta(days=1)
     return count
 
-# ------------------- FILE HANDLER -------------------
+# ------------ B2 FILE HANDLING -----------
+def upload_file_b2(local_path):
+    info = InMemoryAccountInfo()
+    b2_api = B2Api(info)
+    b2_api.authorize_account("production", B2_KEY_ID, B2_APP_KEY)
+    bucket = b2_api.get_bucket_by_name(B2_BUCKET_NAME)
+    file_name = os.path.basename(local_path)
+    uploaded = bucket.upload_bytes(open(local_path, "rb").read(), file_name)
+    public_url = f"https://{B2_ENDPOINT}/file/{B2_BUCKET_NAME}/{file_name}"
+    file_id_url = f"https://{B2_ENDPOINT}/b2api/v1/b2_download_file_by_id?fileId={uploaded.id_}"
+    return {
+        "link": public_url,
+        "fileId": uploaded.id_,
+        "name": file_name,
+        "fileIdUrl": file_id_url
+    }
+
+def delete_file_b2(file_name):
+    info = InMemoryAccountInfo()
+    b2_api = B2Api(info)
+    b2_api.authorize_account("production", B2_KEY_ID, B2_APP_KEY)
+    bucket = b2_api.get_bucket_by_name(B2_BUCKET_NAME)
+    file_info = bucket.get_file_info_by_name(file_name)
+    bucket.delete_file_version(file_name, file_info['fileId'])
+
 def save_files(files, fy, date_obj, order_no, platform, pay_mode, folder):
     saved = []
     folder_path = os.path.join(app.config['UPLOAD_FOLDER'], fy, folder)
@@ -150,16 +164,15 @@ def save_files(files, fy, date_obj, order_no, platform, pay_mode, folder):
         local_path = os.path.join(folder_path, filename)
         file.save(local_path)
         try:
-            public_link = upload_file_b2(local_path)
-            saved.append({'link': public_link, 'path': public_link})
+            info = upload_file_b2(local_path)
+            saved.append(info)
             os.remove(local_path)
         except Exception as e:
             flash(f"Upload failed for {filename}: {str(e)}", "danger")
-            saved.append({'link': f'/uploads/{fy}/{folder}/{filename}', 'path': local_path})
             continue
     return saved
 
-# ------------------- AUTH -------------------
+# ------------------- AUTH ROUTES -------------------
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
@@ -188,7 +201,7 @@ def check_order_exists():
     order_no = request.json.get('order_number', '').strip()
     return jsonify({'exists': any(o['order_number'] == order_no for o in orders)})
 
-# ------------------- INDEX -------------------
+# ------------------- INDEX PAGE -------------------
 @app.route('/')
 def index():
     if 'user' not in session:
@@ -215,7 +228,7 @@ def index():
             flash(emi_msg, 'emi')
     return render_template('index.html', orders=orders, date=date)
 
-# ------------------- UPDATE DELIVERY STATUS -------------------
+# ------------------- DELIVERY STATUS UPDATE -------------------
 @app.route('/update_delivery_status', methods=['POST'])
 def update_delivery_status():
     if 'user' not in session:
@@ -409,13 +422,18 @@ def edit(order_number):
 def delete_file(order_number):
     if 'user' not in session:
         return redirect(url_for('login'))
-    filepath = request.form.get('filepath')
+    file_url = request.form.get('filepath')
+    file_name = os.path.basename(file_url)
+    try:
+        delete_file_b2(file_name)
+        flash(f"File {file_name} deleted from B2", "success")
+    except Exception as e:
+        flash(f"Delete failed: {str(e)}", "danger")
     load_orders()
     for o in orders:
         if o['order_number'] == order_number:
             for key in ['screenshots', 'pdfs']:
-                o[key] = [f for f in o.get(key, [])
-                          if (f != filepath and f.get('path') != filepath if isinstance(f, dict) else True)]
+                o[key] = [f for f in o.get(key, []) if f.get('link', f) != file_url]
             break
     save_orders()
     return redirect(url_for('index'))
