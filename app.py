@@ -13,32 +13,26 @@ from b2sdk.v2 import InMemoryAccountInfo, B2Api
 app = Flask(__name__)
 app.secret_key = 'super-secret-key'
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(minutes=15)
-
 UPLOAD_FOLDER = 'uploads'
 ORDERS_FILE = 'orders.json'
 CARDS_FILE = 'cards.json'
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-
 orders = []
-
 USER_CREDENTIALS = {
     "7206491113.os@gmail.com": "bittu@123"
 }
-
 
 B2_KEY_ID = os.environ.get("B2_KEY_ID")
 B2_APP_KEY = os.environ.get("B2_APP_KEY")
 B2_BUCKET_NAME = os.environ.get("B2_BUCKET_NAME")
 B2_ENDPOINT = "f005.backblazeb2.com"  # Adjust for your B2 endpoint if needed
 
-
 def safe_slug(text):
     text = text.lower().strip() if text else ''
     for tld in ['.com', '.net', '.org', '.in']:
         text = text.replace(tld, '')
     return re.sub(r'[^a-z0-9]+', '-', text).strip('-')
-
 
 def normalize_number(value):
     try:
@@ -49,7 +43,6 @@ def normalize_number(value):
     except:
         return 0
 
-
 def load_orders():
     global orders
     try:
@@ -58,11 +51,9 @@ def load_orders():
     except FileNotFoundError:
         orders = []
 
-
 def save_orders():
     with open(ORDERS_FILE, 'w', encoding='utf-8') as f:
         json.dump(orders, f, indent=2)
-
 
 def load_cards():
     try:
@@ -71,13 +62,11 @@ def load_cards():
     except FileNotFoundError:
         return {}
 
-
 def calculate_profit_loss(purchase, sell):
     try:
         return round(float(sell) - float(purchase), 2)
     except:
         return 0.0
-
 
 def get_financial_year(date_str):
     try:
@@ -86,14 +75,12 @@ def get_financial_year(date_str):
         dt = datetime.today()
     return f"{dt.year}-{dt.year+1}" if dt.month >= 4 else f"{dt.year-1}-{dt.year}"
 
-
 @app.template_filter()
 def datetimeformat(value, fmt='%d %b %Y'):
     try:
         return datetime.strptime(value, '%Y-%m-%d').strftime(fmt)
     except:
         return value
-
 
 @app.template_filter()
 def month_label(value):
@@ -102,7 +89,6 @@ def month_label(value):
         return dt.strftime('%B %Y')
     except:
         return value
-
 
 def fetch_calendarific_holidays(year=None):
     if year is None:
@@ -119,9 +105,7 @@ def fetch_calendarific_holidays(year=None):
             print("Calendarific API error:", resp.text)
     except Exception as e:
         print("Calendarific error:", e)
-    # Return some default holidays if the API call fails
     return {f"{year}-01-26", f"{year}-08-15", f"{year}-10-02"}
-
 
 def count_working_days(start, end, holidays_set):
     count = 0
@@ -132,7 +116,6 @@ def count_working_days(start, end, holidays_set):
         current += timedelta(days=1)
     return count
 
-
 # ----- B2SDK FILE UPLOAD -----
 def upload_file_b2(local_path):
     info = InMemoryAccountInfo()
@@ -140,15 +123,13 @@ def upload_file_b2(local_path):
     b2_api.authorize_account("production", B2_KEY_ID, B2_APP_KEY)
     bucket = b2_api.get_bucket_by_name(B2_BUCKET_NAME)
     file_name = os.path.basename(local_path)
-    # Use upload_local_file for efficient uploading
-    uploaded = bucket.upload_local_file(local_file=local_path, file_name=file_name)
+    uploaded = bucket.upload_bytes(open(local_path, "rb").read(), file_name)
     public_url = f"https://{B2_ENDPOINT}/file/{B2_BUCKET_NAME}/{file_name}"
     return {
         "link": public_url,
         "fileId": uploaded.id_,
         "name": file_name
     }
-
 
 # ----- B2SDK FILE DELETE -----
 def delete_file_b2(file_id, file_name):
@@ -157,7 +138,6 @@ def delete_file_b2(file_id, file_name):
     b2_api.authorize_account("production", B2_KEY_ID, B2_APP_KEY)
     bucket = b2_api.get_bucket_by_name(B2_BUCKET_NAME)
     bucket.delete_file_version(file_id, file_name)
-
 
 def save_files(files, fy, date_obj, order_no, platform, pay_mode, folder):
     saved = []
@@ -185,7 +165,6 @@ def save_files(files, fy, date_obj, order_no, platform, pay_mode, folder):
             continue
     return saved
 
-
 # ------------------- AUTH ROUTES -------------------
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -200,13 +179,11 @@ def login():
         flash("❌ Invalid credentials", "danger")
     return render_template('login.html')
 
-
 @app.route('/logout')
 def logout():
     session.pop('user', None)
     flash("🔒 Logged out", "info")
     return redirect(url_for('login'))
-
 
 # ------------------- AJAX CHECK -------------------
 @app.route('/check_order_exists', methods=['POST'])
@@ -216,7 +193,6 @@ def check_order_exists():
     load_orders()
     order_no = request.json.get('order_number', '').strip()
     return jsonify({'exists': any(o['order_number'] == order_no for o in orders)})
-
 
 # ------------------- INDEX -------------------
 @app.route('/')
@@ -245,7 +221,6 @@ def index():
             flash(emi_msg, 'emi')
     return render_template('index.html', orders=orders, date=date)
 
-
 # ------------------- DELIVERY STATUS UPDATE -------------------
 @app.route('/update_delivery_status', methods=['POST'])
 def update_delivery_status():
@@ -263,7 +238,6 @@ def update_delivery_status():
             save_orders()
             return jsonify(success=True)
     return jsonify(success=False)
-
 
 # ------------------- DASHBOARD -------------------
 @app.route('/pl_metrics_dashboard', methods=['GET'])
@@ -344,7 +318,6 @@ def pl_metrics_dashboard():
                            cash_pending_orders=cash_pending_orders,
                            yet_to_deliver_orders=yet_to_deliver_orders)
 
-
 # ------------------- ADD ORDER -------------------
 @app.route('/add', methods=['POST'])
 def add():
@@ -388,7 +361,6 @@ def add():
     save_orders()
     flash("✅ Order added successfully", "success")
     return redirect(url_for('index'))
-
 
 # ------------------- EDIT ORDER -------------------
 @app.route('/edit/<order_number>', methods=['POST'])
@@ -438,7 +410,6 @@ def edit(order_number):
     flash("✅ Order updated successfully", "success")
     return redirect(url_for('index'))
 
-
 # ------------------- DELETE FILE -------------------
 @app.route('/delete-file/<order_number>', methods=['POST'])
 def delete_file(order_number):
@@ -472,7 +443,6 @@ def delete_file(order_number):
         flash("Delete failed: fileId not found", "danger")
     return redirect(url_for('index'))
 
-
 # ------------------- DELETE ORDER -------------------
 @app.route('/delete/<order_number>', methods=['POST'])
 def delete_order(order_number):
@@ -484,7 +454,6 @@ def delete_order(order_number):
     save_orders()
     flash(f"🗑 Order {order_number} deleted", "success")
     return redirect(url_for('index'))
-
 
 # ------------------- CASH RECEIVED -------------------
 @app.route('/mark_cash_received', methods=['POST'])
@@ -501,7 +470,6 @@ def mark_cash_received():
             save_orders()
             return jsonify(success=True)
     return jsonify(success=False)
-
 
 # ------------------- MARK DELIVERED -------------------
 @app.route('/mark_delivered', methods=['POST'])
@@ -524,7 +492,6 @@ def mark_delivered():
             save_orders()
             return jsonify(success=True)
     return jsonify(success=False)
-
 
 if __name__ == '__main__':
     app.run(debug=True)
