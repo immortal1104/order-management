@@ -10,7 +10,6 @@ from werkzeug.utils import secure_filename
 
 from b2sdk.v2 import InMemoryAccountInfo, B2Api
 
-# ------------ CONFIGURATION -------------
 app = Flask(__name__)
 app.secret_key = 'super-secret-key'
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(minutes=15)
@@ -27,7 +26,7 @@ USER_CREDENTIALS = {
 B2_KEY_ID = os.environ.get("B2_KEY_ID")
 B2_APP_KEY = os.environ.get("B2_APP_KEY")
 B2_BUCKET_NAME = os.environ.get("B2_BUCKET_NAME")
-B2_ENDPOINT = "f005.backblazeb2.com"  # Use "f000" or your actual endpoint
+B2_ENDPOINT = "f005.backblazeb2.com"  # Change this if your account uses f000 or other
 
 def safe_slug(text):
     text = text.lower().strip() if text else ''
@@ -117,7 +116,7 @@ def count_working_days(start, end, holidays_set):
         current += timedelta(days=1)
     return count
 
-# ------------ B2SDK FILE UPLOAD ----------
+# ----- B2SDK FILE UPLOAD -----
 def upload_file_b2(local_path):
     info = InMemoryAccountInfo()
     b2_api = B2Api(info)
@@ -134,7 +133,7 @@ def upload_file_b2(local_path):
         "fileIdUrl": file_id_url
     }
 
-# ------------ B2SDK FILE DELETE ----------
+# ----- B2SDK FILE DELETE -----
 def delete_file_b2(file_name, file_id):
     info = InMemoryAccountInfo()
     b2_api = B2Api(info)
@@ -428,13 +427,14 @@ def delete_file(order_number):
                     if f.get('link', f) == file_url:
                         file_entry = f
                         break
+    # NEW LOGIC: use name and fileId for B2 delete!
     if file_entry and "fileId" in file_entry and "name" in file_entry:
         try:
             delete_file_b2(file_entry["name"], file_entry["fileId"])
             flash(f"File {file_entry['name']} deleted from B2", "success")
         except Exception as e:
             flash(f"Delete failed: {str(e)}", "danger")
-        # Remove from the order files list
+        # Remove from order file list
         for o in orders:
             if o['order_number'] == order_number:
                 for key in ['screenshots', 'pdfs']:
