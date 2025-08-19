@@ -1,4 +1,4 @@
 Flask
 gunicorn
 requests>=2.32.0
-pydrive2
+mega.py
