@@ -1,3 +1,0 @@
-
-# Block pycrypto (not compatible with Python 3.13 on Render)
-pycrypto==0
