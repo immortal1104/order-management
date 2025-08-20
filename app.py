@@ -34,7 +34,7 @@ app.secret_key = 'super-secret-key'
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(minutes=15)
 
 UPLOAD_FOLDER = 'uploads'
-ORDERS_FILE = '/etc/secret/order.json'
+ORDERS_FILE = '/etc/secret/orders.json'
 CARDS_FILE = 'cards.json'
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
