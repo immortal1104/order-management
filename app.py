@@ -249,6 +249,10 @@ def check_order_exists():
 
 # ------------------- INDEX -------------------
 
+@app.route("/healthz")
+def healthz():
+    return jsonify({"status": "ok"}), 200
+
 @app.route('/')
 def index():
     if 'user' not in session:
