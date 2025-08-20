@@ -1,12 +1,13 @@
 /* =========================================================
 static/script.js
 
-v3.1 - Unified Index + Dashboard scripts
+v3.2 - Unified Index + Dashboard scripts (with Profit Fix)
 
-Changes in v3.1:
-- Updated allOwners names for dashboard charts
-- Merged dashboard Chart.js code from template into this file
-- Removed need for inline scripts
+Changes in v3.2:
+- Fixed profit/loss calculation (auto updates on input change)
+- Removed duplicate confirmDelete definition
+- Added error handler for order availability AJAX
+- Cleaned Chart.js config (removed unused scales for doughnut)
 ========================================================= */
 
 $(document).ready(function () {
@@ -16,6 +17,7 @@ $(document).ready(function () {
         let table = $('#ordersTable').DataTable({
             retrieve: true,
             order: [[8, 'desc']],
+            deferRender: true,
             columnDefs: [
                 { targets: [0,1,2,6,7,10,11,12,14,15,16], orderable: false }
             ],
@@ -78,7 +80,7 @@ $(document).ready(function () {
 
         // Load order data in form for edit
         const editData = sessionStorage.getItem('editOrderData');
-        if (editData) {
+        if (editData && editData !== "null") {
             try {
                 var order = JSON.parse(editData);
                 fillEditForm(order);
@@ -128,13 +130,8 @@ $(document).ready(function () {
                 }]
             },
             options: {
-                indexAxis: 'y',
                 responsive: true,
-                plugins: { legend: { display: false } },
-                scales: {
-                    x: { beginAtZero: true, ticks: { font: { size: 10 } } },
-                    y: { ticks: { font: { size: 10 } } }
-                }
+                plugins: { legend: { display: false } }
             }
         });
 
@@ -150,13 +147,8 @@ $(document).ready(function () {
                 }]
             },
             options: {
-                indexAxis: 'y',
                 responsive: true,
-                plugins: { legend: { display: false } },
-                scales: {
-                    x: { beginAtZero: true, ticks: { font: { size: 10 } } },
-                    y: { ticks: { font: { size: 10 } } }
-                }
+                plugins: { legend: { display: false } }
             }
         });
 
@@ -193,6 +185,9 @@ $(document).ready(function () {
             }
         });
     }
+
+    // 🔥 FIX: Auto calculate profit/loss when purchase/sell changes
+    $('#purchase, #sell').on('input', calcProfit);
 });
 
 /* COMMON FUNCTIONS */
@@ -243,6 +238,9 @@ function checkOrderAvailability() {
         success: function (data) {
             if (data.exists) msgEl.text('⚠️ Order number already exists!');
             else msgEl.text('');
+        },
+        error: function () {
+            msgEl.text('⚠️ Could not check order number.');
         }
     });
 }
