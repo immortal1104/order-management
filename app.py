@@ -48,22 +48,18 @@ USER_CREDENTIALS = {
 gauth = GoogleAuth()
 gauth.LoadCredentialsFile("mycreds.txt")
 
-if gauth.credentials is None:
-    # Credentials not found, no possibility to auto-auth in production.
-    # Ideally, send a message to admin to run OAuth flow manually locally
-    raise Exception("Google Drive credentials not found. Please run OAuth locally to generate credentials.")
+if not gauth.credentials:
+    # Credentials missing: raise error or handle accordingly
+    raise Exception("Google Drive credentials missing. Please authenticate manually.")
 
-if gauth.access_token_expired and gauth.refresh_token:
-    try:
+if gauth.credentials.expired:
+    if gauth.credentials and getattr(gauth.credentials, 'refresh_token', None):
         gauth.Refresh()
-    except Exception as e:
-        # Handle refresh failure gracefully
-        raise Exception("Failed to refresh Google OAuth token.") from e
+    else:
+        # In production, do NOT call LocalWebserverAuth
+        raise Exception("No refresh token available, manual re-auth needed.")
 
-# If credentials exist and are valid, authorize the client
 gauth.Authorize()
-
-# Always save updated credentials after successful refresh/authorize
 gauth.SaveCredentialsFile("mycreds.txt")
 
 drive = GoogleDrive(gauth)
