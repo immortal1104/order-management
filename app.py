@@ -48,16 +48,14 @@ USER_CREDENTIALS = {
 gauth = GoogleAuth()
 gauth.LoadCredentialsFile("mycreds.txt")
 
-if not gauth.credentials:
-    # Credentials missing: raise error or handle accordingly
-    raise Exception("Google Drive credentials missing. Please authenticate manually.")
+if gauth.credentials is None:
+    raise Exception("Credentials missing.")
 
-if gauth.credentials.expired:
-    if gauth.credentials and getattr(gauth.credentials, 'refresh_token', None):
+if gauth.credentials.access_token_expired:
+    if getattr(gauth.credentials, 'refresh_token', None):
         gauth.Refresh()
     else:
-        # In production, do NOT call LocalWebserverAuth
-        raise Exception("No refresh token available, manual re-auth needed.")
+        raise Exception("Refresh token missing; re-auth needed.")
 
 gauth.Authorize()
 gauth.SaveCredentialsFile("mycreds.txt")
